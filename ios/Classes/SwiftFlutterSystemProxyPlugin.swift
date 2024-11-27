@@ -76,34 +76,36 @@ public class SwiftFlutterSystemProxyPlugin: NSObject, FlutterPlugin {
         }
     }
 
-    static func handlePacUrl(pacUrl: String, url: String){
-        let _pacUrl = CFURLCreateWithString(kCFAllocatorDefault,  pacUrl as CFString?,nil)
-        let targetUrl = CFURLCreateWithString(kCFAllocatorDefault, url as CFString?, nil)
-        var info = url;
-        withUnsafeMutablePointer(to: &info, { infoPointer in
-            var context:CFStreamClientContext = CFStreamClientContext.init(version: 0, info: infoPointer, retain: nil, release: nil, copyDescription: nil)
-                let runLoopSource = CFNetworkExecuteProxyAutoConfigurationURL(_pacUrl!,targetUrl!,  { client, proxies, error in
-                    let _proxies = proxies as? [[CFString: Any]] ?? [];
-                        if(_proxies.count > 0){
-                        let proxy = _proxies.first{$0[kCFProxyTypeKey] as! CFString == kCFProxyTypeHTTP || $0[kCFProxyTypeKey] as! CFString == kCFProxyTypeHTTPS}
-                        if(proxy != nil){
-                            let host = proxy?[kCFProxyHostNameKey] ?? nil
-                            let port = proxy?[kCFProxyPortNumberKey] ?? nil
-                            var dict:[String: Any] = [:]
-                            dict["host"] = host
-                            dict["port"] = port
-                            let url = client.assumingMemoryBound(to: String.self).pointee
-                            SwiftFlutterSystemProxyPlugin.proxyCache[url] = dict
-                        }
-                    }
-                    CFRunLoopStop(CFRunLoopGetCurrent());
-                }, &context);
-                let runLoop = CFRunLoopGetCurrent();
-                CFRunLoopAddSource(runLoop, getRunLoopSource(runLoopSource), CFRunLoopMode.defaultMode);
-                CFRunLoopRun();
-                CFRunLoopRemoveSource(CFRunLoopGetCurrent(), getRunLoopSource(runLoopSource), CFRunLoopMode.defaultMode);
-        })
-    }
+    static func handlePacUrl(pacUrl: String, url: String) {
+    let _pacUrl = CFURLCreateWithString(kCFAllocatorDefault, pacUrl as CFString?, nil)
+    let targetUrl = CFURLCreateWithString(kCFAllocatorDefault, url as CFString?, nil)
+    var info = url
+    withUnsafeMutablePointer(to: &info, { infoPointer in
+        var context: CFStreamClientContext = CFStreamClientContext(version: 0, info: infoPointer, retain: nil, release: nil, copyDescription: nil)
+        let unmanagedRunLoopSource = CFNetworkExecuteProxyAutoConfigurationURL(_pacUrl!, targetUrl!, { client, proxies, error in
+            let _proxies = proxies as? [[CFString: Any]] ?? []
+            if (_proxies.count > 0) {
+                let proxy = _proxies.first { $0[kCFProxyTypeKey] as! CFString == kCFProxyTypeHTTP || $0[kCFProxyTypeKey] as! CFString == kCFProxyTypeHTTPS }
+                if (proxy != nil) {
+                    let host = proxy?[kCFProxyHostNameKey] ?? nil
+                    let port = proxy?[kCFProxyPortNumberKey] ?? nil
+                    var dict: [String: Any] = [:]
+                    dict["host"] = host
+                    dict["port"] = port
+                    let url = client.assumingMemoryBound(to: String.self).pointee
+                    SwiftFlutterSystemProxyPlugin.proxyCache[url] = dict
+                }
+            }
+            CFRunLoopStop(CFRunLoopGetCurrent())
+        }, &context)
+        let runLoopSource = unmanagedRunLoopSource.takeUnretainedValue()
+        let runLoop = CFRunLoopGetCurrent()
+        
+        CFRunLoopAddSource(runLoop, runLoopSource, CFRunLoopMode.defaultMode)
+        CFRunLoopRun()
+        CFRunLoopRemoveSource(CFRunLoopGetCurrent(), runLoopSource, CFRunLoopMode.defaultMode)
+    })
+}
     
     //For backward compatibility <= XCode 15
     static func getRunLoopSource<T>(_ runLoopSource: T) -> CFRunLoopSource {
